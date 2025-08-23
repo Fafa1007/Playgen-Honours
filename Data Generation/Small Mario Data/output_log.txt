@@ -1,0 +1,5 @@
+Playing level: levels\original\lvl-1.txt, Agent: Robin Baumgarten, Timer: 20, Mario State: 0, fps: 20
+Playing level: levels\original\lvl-1.txt, Agent: Sergey Karakovskiy, Timer: 20, Mario State: 0, fps: 20
+Playing level: levels\original\lvl-1.txt, Agent: SpencerSchumann, Timer: 20, Mario State: 0, fps: 20
+Playing level: levels\original\lvl-1.txt, Agent: Glen Hartmann, Timer: 20, Mario State: 0, fps: 20
+Playing level: levels\original\lvl-1.txt, Agent: TrondEllingsen, Timer: 20, Mario State: 0, fps: 20
