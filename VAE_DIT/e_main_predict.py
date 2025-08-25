@@ -1,7 +1,6 @@
-# e_main_predict.py
 import torch
 from b_vae_model import VAE, USE_SKIPS
-from d_dit_model import SimpleDiT
+from d_dit_model import DiffusionTransformer   # <-- changed import
 from a_load_mario_dataset import MarioFramesDataset
 from PIL import Image
 import os
@@ -19,7 +18,13 @@ vae.eval()
 # --------------------------
 # Load DiT
 # --------------------------
-dit = SimpleDiT().to(device)
+dit = DiffusionTransformer(
+    latent_dim=256,
+    action_dim=5,
+    hidden_dim=512,
+    depth=4,
+    num_heads=8
+).to(device)
 dit.load_state_dict(torch.load("dit_model.pt", map_location=device))
 dit.eval()
 
@@ -48,10 +53,9 @@ with torch.no_grad():
     z_t = mu  # start latent
 
     for idx, action in enumerate(dataset.actions):
-        a_t = torch.zeros(1, 4, device=device)
-        a_t[0, action] = 1.0
+        a_t = torch.tensor(action, dtype=torch.float32, device=device).unsqueeze(0)
 
-        # Predict next latent
+        # Predict next latent with DiT
         z_tp1 = dit(z_t, a_t)
 
         # Decode using skips from current frame

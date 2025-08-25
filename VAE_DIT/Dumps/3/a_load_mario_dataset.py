@@ -16,7 +16,7 @@ class MarioFramesDataset(Dataset):
         Expected layout:
           root_dir/
             frames/        image files (png, jpg, jpeg)
-            actions.txt    optional, one multi-binary vector per line, e.g. "0,1,0,1,0"
+            actions.txt    optional, one integer per line (or CSV)
         """
         self.root_dir = root_dir
         self.frames_dir = os.path.join(root_dir, "frames")
@@ -33,19 +33,16 @@ class MarioFramesDataset(Dataset):
         # Load actions if present; otherwise fill with zeros
         actions_txt = os.path.join(root_dir, "actions.txt")
         actions_csv = os.path.join(root_dir, "actions.csv")
-        self.actions: List[List[int]] = []  # CHANGED: now stores lists of ints instead of single int
+        self.actions: List[int] = []
 
         if self.return_actions and os.path.exists(actions_txt):
             with open(actions_txt, "r") as f:
-                # CHANGED: parse full comma-separated binary vector
-                self.actions = [list(map(int, line.strip().split(","))) for line in f if line.strip()]
+                self.actions = [int(line.strip().split(",")[0]) for line in f if line.strip()]
         elif self.return_actions and os.path.exists(actions_csv):
             with open(actions_csv, "r") as f:
-                # CHANGED: parse full comma-separated binary vector
-                self.actions = [list(map(int, line.strip().split(","))) for line in f if line.strip()]
+                self.actions = [int(line.strip().split(",")[0]) for line in f if line.strip()]
         else:
-            # CHANGED: default to 5-button zero vector if no actions file
-            self.actions = [[0]*5 for _ in range(len(self.frame_paths))]
+            self.actions = [0] * len(self.frame_paths)
 
         # Truncate safely if counts differ
         n_frames = len(self.frame_paths)
@@ -69,15 +66,9 @@ class MarioFramesDataset(Dataset):
     def __len__(self) -> int:
         return len(self.frame_paths)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, int]:
         img_path = self.frame_paths[idx]
         img = Image.open(img_path).convert("RGB")
         img_t = self.transform(img)     # float32, [3, H, W], values ~ [-1, 1]
-
-        # CHANGED: return action as a float tensor vector instead of int
-        if self.return_actions:
-            action = torch.tensor(self.actions[idx], dtype=torch.float32)
-        else:
-            action = torch.zeros(5, dtype=torch.float32)  # default: no buttons pressed
-
+        action = self.actions[idx] if self.return_actions else 0
         return img_t, action

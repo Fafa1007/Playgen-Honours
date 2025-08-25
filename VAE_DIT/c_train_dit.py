@@ -14,7 +14,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 # --------------------------
 HYPERPARAMS = {
     "latent_dim": 256,
-    "action_dim": 4,
+    "action_dim": 5,
     "hidden_dim": 512,       
     "batch_size": 32,
     "epochs": 10,
@@ -62,23 +62,51 @@ class MarioLatentDataset(Dataset):
                 self.skips_t[idx])
 
 # --------------------------
-# Simple DiT model
+# Diffusion Transformer (DiT) block
 # --------------------------
-class SimpleDiT(nn.Module):
-    """
-    Predicts next latent given current latent + action.
-    """
-    def __init__(self, latent_dim, action_dim, hidden_dim):
+class DiTBlock(nn.Module):
+    def __init__(self, dim, num_heads):
         super().__init__()
-        self.fc = nn.Sequential(
-            nn.Linear(latent_dim + action_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, latent_dim)
+        self.norm1 = nn.LayerNorm(dim)
+        self.attn = nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads, batch_first=True)
+        self.norm2 = nn.LayerNorm(dim)
+        self.mlp = nn.Sequential(
+            nn.Linear(dim, dim * 4),
+            nn.GELU(),
+            nn.Linear(dim * 4, dim)
         )
 
+    def forward(self, x):
+        # Self-attention
+        h = self.norm1(x)
+        h, _ = self.attn(h, h, h)
+        x = x + h
+        # MLP
+        h = self.norm2(x)
+        h = self.mlp(h)
+        return x + h
+
+
+class DiffusionTransformer(nn.Module):
+    """
+    Minimal DiT: takes (z_t + action) as input sequence, predicts z_{t+1}.
+    """
+    def __init__(self, latent_dim, action_dim, hidden_dim=512, depth=4, num_heads=8):
+        super().__init__()
+        self.input_proj = nn.Linear(latent_dim + action_dim, hidden_dim)
+        self.blocks = nn.ModuleList([DiTBlock(hidden_dim, num_heads) for _ in range(depth)])
+        self.norm = nn.LayerNorm(hidden_dim)
+        self.output_proj = nn.Linear(hidden_dim, latent_dim)
+
     def forward(self, z_t, action_t):
-        x = torch.cat([z_t, action_t], dim=-1)
-        return self.fc(x)
+        # concat latent + action
+        x = torch.cat([z_t, action_t], dim=-1).unsqueeze(1)  # shape [B, 1, D]
+        x = self.input_proj(x)
+        for blk in self.blocks:
+            x = blk(x)
+        x = self.norm(x)
+        x = self.output_proj(x.squeeze(1))  # back to [B, latent_dim]
+        return x
 
 # --------------------------
 # Training function
@@ -92,7 +120,14 @@ def train_dit(data_root, vae_path, params):
     dataset = MarioLatentDataset(data_root, vae)
     loader = DataLoader(dataset, batch_size=params["batch_size"], shuffle=True)
 
-    model = SimpleDiT(params["latent_dim"], params["action_dim"], params["hidden_dim"]).to(device)
+    model = DiffusionTransformer(
+        latent_dim=params["latent_dim"],
+        action_dim=params["action_dim"],
+        hidden_dim=params["hidden_dim"],
+        depth=4,          # number of transformer layers
+        num_heads=8       # number of attention heads
+    ).to(device)
+
     optimizer = optim.AdamW(model.parameters(), lr=params["learning_rate"], weight_decay=params["weight_decay"])
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=params["scheduler_step"], gamma=params["scheduler_gamma"])
     criterion = nn.MSELoss()
@@ -101,8 +136,11 @@ def train_dit(data_root, vae_path, params):
         total_loss = 0.0
         for z_t, a_t, z_tp1, _ in loader:
             z_t, a_t, z_tp1 = z_t.to(device), a_t.to(device), z_tp1.to(device)
-            a_t_oh = nn.functional.one_hot(a_t.long(), num_classes=params["action_dim"]).float()
-            pred = model(z_t, a_t_oh)
+            
+            # CHANGED: removed one-hot conversion, a_t is already a [B, 5] float tensor
+            a_t = a_t.float()  
+
+            pred = model(z_t, a_t)
             loss = criterion(pred, z_tp1)
 
             optimizer.zero_grad()
@@ -113,7 +151,7 @@ def train_dit(data_root, vae_path, params):
         scheduler.step()
         avg_loss = total_loss / len(dataset)
         print(f"Epoch {epoch+1}/{params['epochs']}, Loss: {avg_loss:.6f}, LR: {scheduler.get_last_lr()[0]:.6e}")
-
+    
     torch.save(model.state_dict(), "dit_model.pt")
     print("DiT model saved to dit_model.pt")
 
