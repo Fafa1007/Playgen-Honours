@@ -1,0 +1,11 @@
+results 01 = {
+    "latent_dim": 256,
+    "action_dim": 4,
+    "hidden_dim": 512,       # DiT hidden layer size
+    "batch_size": 32,
+    "epochs": 10,
+    "learning_rate": 1e-3,
+    "weight_decay": 1e-4,    # helps regularize
+    "scheduler_step": 5,     # decay LR every N epochs
+    "scheduler_gamma": 0.5,  # multiply LR by this factor
+}
