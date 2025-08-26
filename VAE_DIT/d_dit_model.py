@@ -223,7 +223,7 @@ class EnhancedDiTBlock(nn.Module):
         
         self.norm2 = nn.LayerNorm(dim)
         self.mlp = nn.Sequential(
-            nn.Linear(dim, dim * 4),
+            nn.Linear(dim, int(dim * mlp_ratio)),
             nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(dim * 4, dim)
